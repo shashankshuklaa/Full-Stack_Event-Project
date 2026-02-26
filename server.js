@@ -4,7 +4,6 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-const passport = require("./auth/passport");
 const authRoutes = require("./auth/authRoutes");
 const eventRoutes = require("./routes/eventRoutes");
 const scrapeEvents = require("./scraper/scraper");
@@ -17,7 +16,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser());
-app.use(passport.initialize());
 
 app.use("/auth", authRoutes);
 app.use("/api/events", eventRoutes);
@@ -39,3 +37,4 @@ app.get("*", (req, res) => {
     });
   })
   .catch(err => console.log(err));
+
