@@ -1,40 +1,37 @@
 require("dotenv").config();
-const path = require("path");
+
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-const authRoutes = require("./auth/authRoutes");
-const eventRoutes = require("./routes/eventRoutes");
-const scrapeEvents = require("./scraper/scraper");
 
 const app = express();
 
-app.use(cors({
-  origin: "http://localhost:3000",
-  credentials: true
-}));
+// Middleware
+app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
 
-app.use("/auth", authRoutes);
-app.use("/api/events", eventRoutes);
-
+// MongoDB Connection
 mongoose.connect(process.env.MONGO_URI)
-  .then(async () => {
-    console.log("MongoDB Connected");
-    await scrapeEvents();
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => {
+    console.error("❌ MongoDB Connection Error:", err.message);
+    process.exit(1);
+  });
 
-    // Serve React production build
-app.use(express.static(path.join(__dirname, "build")));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "build", "index.html"));
+// Basic test route
+app.get("/", (req, res) => {
+  res.send("🚀 Server is running successfully");
 });
 
-    app.listen(5000, () => {
-      console.log("Server running on port 5000");
-    });
-  })
-  .catch(err => console.log(err));
+// Routes
+const eventRoutes = require("./routes/eventRoutes");
+app.use("/api/events", eventRoutes);
 
+// Port (VERY IMPORTANT FOR RENDER)
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
