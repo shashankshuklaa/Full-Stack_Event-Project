@@ -2,9 +2,9 @@
   "name": "event-app",
   "version": "1.0.0",
   "type": "module",
-  "main": "server.mjs",
+  "main": "server.js",
   "scripts": {
-    "start": "node server.mjs",
+    "start": "node server.js",
     "build": "cd frontend && npm install && npm run build"
   },
   "dependencies": {
