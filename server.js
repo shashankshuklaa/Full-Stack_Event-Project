@@ -3,16 +3,28 @@ import cors from "cors";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import path from "path";
-import { fileURLToPath } from "url";
-import pg from "pg";
+import pkg from "pg";
+
+const { Pool } = pkg;
 
 const app = express();
-const PORT = process.env.PORT || 10000;
 
-/* ================= MIDDLEWARE ================= */
+/* =========================
+   BASIC MIDDLEWARE
+========================= */
 
-import session from "express-session";
+app.use(cors({
+  origin: process.env.FRONTEND_URL || true,
+  credentials: true
+}));
+
+app.use(express.json());
+
+/* =========================
+   SESSION CONFIG (PRODUCTION SAFE)
+========================= */
+
+app.set("trust proxy", 1); // Required for Render (HTTPS)
 
 app.use(
   session({
@@ -20,39 +32,49 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: true, // production https
+      secure: true, // MUST be true on Render (HTTPS)
       httpOnly: true,
       sameSite: "none"
     }
   })
 );
 
+/* =========================
+   PASSPORT INIT
+========================= */
+
 app.use(passport.initialize());
 app.use(passport.session());
 
-/* ================= DATABASE ================= */
+/* =========================
+   DATABASE (Render PostgreSQL)
+========================= */
 
-const pool = new pg.Pool({
+const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
-// Automatically create users table
-(async () => {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name TEXT,
-        email TEXT UNIQUE
-      );
-    `);
-    console.log("Users table ready");
-  } catch (err) {
-    console.error("Error creating users table:", err);
-  }
-})();
 
-/* ================= PASSPORT ================= */
+/* =========================
+   AUTO CREATE USERS TABLE
+========================= */
+
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      google_id TEXT UNIQUE,
+      name TEXT,
+      email TEXT UNIQUE
+    );
+  `);
+
+  console.log("Users table ready");
+}
+
+/* =========================
+   PASSPORT GOOGLE STRATEGY
+========================= */
 
 passport.use(
   new GoogleStrategy(
@@ -63,21 +85,25 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        const email = profile.emails[0].value;
+        const { id, displayName, emails } = profile;
 
-        const user = await pool.query(
-          "SELECT * FROM users WHERE email=$1",
-          [email]
+        const email = emails[0].value;
+
+        const existingUser = await pool.query(
+          "SELECT * FROM users WHERE google_id = $1",
+          [id]
         );
 
-        if (user.rows.length === 0) {
-          await pool.query(
-            "INSERT INTO users (name, email) VALUES ($1,$2)",
-            [profile.displayName, email]
-          );
+        if (existingUser.rows.length > 0) {
+          return done(null, existingUser.rows[0]);
         }
 
-        return done(null, profile);
+        const newUser = await pool.query(
+          "INSERT INTO users (google_id, name, email) VALUES ($1, $2, $3) RETURNING *",
+          [id, displayName, email]
+        );
+
+        return done(null, newUser.rows[0]);
       } catch (err) {
         return done(err, null);
       }
@@ -85,51 +111,64 @@ passport.use(
   )
 );
 
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((obj, done) => done(null, obj));
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
 
-/* ================= AUTH ROUTES ================= */
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
+    done(null, user.rows[0]);
+  } catch (err) {
+    done(err, null);
+  }
+});
 
+/* =========================
+   ROUTES
+========================= */
+
+app.get("/", (req, res) => {
+  res.send("Event App Running Successfully 🚀");
+});
+
+/* Google Login */
 app.get(
   "/auth/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
+/* Google Callback */
 app.get(
   "/auth/google/callback",
   passport.authenticate("google", {
-    failureRedirect: "/",
+    failureRedirect: "/"
   }),
   (req, res) => {
-    res.redirect("/");
+    res.redirect(process.env.FRONTEND_URL || "/");
   }
 );
 
+/* Get Logged User */
 app.get("/api/user", (req, res) => {
-  res.json(req.user || null);
+  if (!req.user) return res.json({ user: null });
+  res.json({ user: req.user });
 });
 
-app.get("/api/logout", (req, res) => {
+/* Logout */
+app.get("/logout", (req, res) => {
   req.logout(() => {
     res.redirect("/");
   });
 });
 
-/* ================= STATIC FRONTEND ================= */
+/* =========================
+   START SERVER
+========================= */
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const PORT = process.env.PORT || 10000;
 
-app.use(express.static(path.join(__dirname, "frontend/build")));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend/build/index.html"));
-});
-
-/* ================= START ================= */
-
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  await initDB();
 });
-
-
