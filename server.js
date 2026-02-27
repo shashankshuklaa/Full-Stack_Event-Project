@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 10000;
 
 /* ================= MIDDLEWARE ================= */
 
-app.use(express.json());
+import session from "express-session";
 
 app.use(
   session({
@@ -20,7 +20,8 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: true,
+      secure: true, // production https
+      httpOnly: true,
       sameSite: "none"
     }
   })
@@ -130,4 +131,5 @@ app.get("*", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
 
