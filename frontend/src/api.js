@@ -1,14 +1,16 @@
 const API_BASE = "";
 
 export const getUser = async () => {
-  const res = await fetch(`${API_BASE}/api/user`, {
-    credentials: "include",
-  });
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}/api/user`, {
+      credentials: "include",
+    });
+    return await res.json();
+  } catch (err) {
+    console.error("Error fetching user:", err);
+    return null;
+  }
 };
-fetch("/api/user",{
-   credentials: "include"
-})
 
 export const loginWithGoogle = () => {
   window.location.href = "/auth/google";
@@ -17,4 +19,3 @@ export const loginWithGoogle = () => {
 export const logout = () => {
   window.location.href = "/logout";
 };
-
