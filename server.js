@@ -144,10 +144,12 @@ app.get("/logout", (req, res) => {
 // SERVE REACT BUILD
 // ============================
 
-app.use(express.static(path.join(__dirname, "frontend/build")));
+const frontendPath = path.join(process.cwd(), "frontend", "build");
+
+app.use(express.static(frontendPath));
 
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend/build/index.html"));
+  res.sendFile(path.join(frontendPath, "index.html"));
 });
 
 // ============================
@@ -159,3 +161,4 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
