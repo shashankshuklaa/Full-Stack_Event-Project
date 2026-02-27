@@ -1,58 +1,42 @@
 import express from "express";
-import cors from "cors";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import pkg from "pg";
+import pg from "pg";
 import path from "path";
-
-const frontendPath = path.join(process.cwd(), "frontend", "build");
-
-app.use(express.static(frontendPath));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(frontendPath, "index.html"));
-});
-
 import { fileURLToPath } from "url";
-
-const { Pool } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(express.json());
 
-// ============================
-// DATABASE
-// ============================
+/* =========================
+   DATABASE CONNECTION
+========================= */
 
-const pool = new Pool({
+const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     google_id TEXT UNIQUE,
-    name TEXT,
-    email TEXT UNIQUE
+    display_name TEXT,
+    email TEXT
   );
 `);
 
 console.log("Users table ready");
 
-// ============================
-// MIDDLEWARE
-// ============================
-
-app.use(express.json());
-
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
+/* =========================
+   SESSION CONFIG
+========================= */
 
 app.use(
   session({
@@ -61,7 +45,6 @@ app.use(
     saveUninitialized: false,
     cookie: {
       secure: true,
-      httpOnly: true,
       sameSite: "none",
     },
   })
@@ -70,38 +53,32 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ============================
-// PASSPORT CONFIG
-// ============================
+/* =========================
+   PASSPORT CONFIG
+========================= */
 
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "/auth/google/callback",
+      callbackURL:
+        "https://event-app-ilov.onrender.com/auth/google/callback",
     },
     async (accessToken, refreshToken, profile, done) => {
+      const { id, displayName, emails } = profile;
+
       try {
-        const existingUser = await pool.query(
-          "SELECT * FROM users WHERE google_id = $1",
-          [profile.id]
+        const result = await pool.query(
+          `INSERT INTO users (google_id, display_name, email)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (google_id)
+           DO UPDATE SET display_name = EXCLUDED.display_name
+           RETURNING *`,
+          [id, displayName, emails[0].value]
         );
 
-        if (existingUser.rows.length > 0) {
-          return done(null, existingUser.rows[0]);
-        }
-
-        const newUser = await pool.query(
-          "INSERT INTO users (google_id, name, email) VALUES ($1,$2,$3) RETURNING *",
-          [
-            profile.id,
-            profile.displayName,
-            profile.emails[0].value,
-          ]
-        );
-
-        return done(null, newUser.rows[0]);
+        return done(null, result.rows[0]);
       } catch (err) {
         return done(err, null);
       }
@@ -109,38 +86,36 @@ passport.use(
   )
 );
 
-passport.serializeUser((user, done) => done(null, user.id));
-
-passport.deserializeUser(async (id, done) => {
-  try {
-    const user = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
-    done(null, user.rows[0]);
-  } catch (err) {
-    done(err, null);
-  }
+passport.serializeUser((user, done) => {
+  done(null, user.id);
 });
 
-// ============================
-// ROUTES
-// ============================
+passport.deserializeUser(async (id, done) => {
+  const result = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
+  done(null, result.rows[0]);
+});
 
-app.get("/auth/google",
+/* =========================
+   AUTH ROUTES
+========================= */
+
+app.get(
+  "/auth/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-app.get("/auth/google/callback",
-  passport.authenticate("google", { failureRedirect: "/" }),
+app.get(
+  "/auth/google/callback",
+  passport.authenticate("google", {
+    failureRedirect: "/",
+  }),
   (req, res) => {
     res.redirect("/");
   }
 );
 
 app.get("/api/user", (req, res) => {
-  if (req.isAuthenticated()) {
-    res.json(req.user);
-  } else {
-    res.status(401).json({ message: "Not authenticated" });
-  }
+  res.json(req.user || null);
 });
 
 app.get("/logout", (req, res) => {
@@ -149,11 +124,11 @@ app.get("/logout", (req, res) => {
   });
 });
 
-// ============================
-// SERVE REACT BUILD
-// ============================
+/* =========================
+   SERVE REACT FRONTEND
+========================= */
 
-const frontendPath = path.join(process.cwd(), "frontend", "build");
+const frontendPath = path.join(__dirname, "frontend", "build");
 
 app.use(express.static(frontendPath));
 
@@ -161,14 +136,12 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(frontendPath, "index.html"));
 });
 
-// ============================
-// START SERVER
-// ============================
+/* =========================
+   START SERVER
+========================= */
 
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-
