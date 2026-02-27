@@ -6,6 +6,9 @@ export const getUser = async () => {
   });
   return res.json();
 };
+fetch("/api/user",{
+   credentials: "include"
+})
 
 export const loginWithGoogle = () => {
   window.location.href = "/auth/google";
@@ -14,3 +17,4 @@ export const loginWithGoogle = () => {
 export const logout = () => {
   window.location.href = "/logout";
 };
+
