@@ -1,5 +1,8 @@
 import express from "express";
 import cors from "cors";
+import session from "express-session";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
@@ -7,34 +10,96 @@ import pg from "pg";
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-app.use(cors());
+/* ================= MIDDLEWARE ================= */
+
 app.use(express.json());
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: true,
+      sameSite: "none"
+    }
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 /* ================= DATABASE ================= */
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: { rejectUnauthorized: false }
 });
 
-pool.connect()
-  .then(() => console.log("PostgreSQL Connected"))
-  .catch(err => console.error(err));
+/* ================= PASSPORT ================= */
 
-/* ================= API ROUTES ================= */
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: "/auth/google/callback"
+    },
+    async (accessToken, refreshToken, profile, done) => {
+      try {
+        const email = profile.emails[0].value;
 
-app.get("/api/events", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM events ORDER BY id DESC");
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
+        const user = await pool.query(
+          "SELECT * FROM users WHERE email=$1",
+          [email]
+        );
+
+        if (user.rows.length === 0) {
+          await pool.query(
+            "INSERT INTO users (name, email) VALUES ($1,$2)",
+            [profile.displayName, email]
+          );
+        }
+
+        return done(null, profile);
+      } catch (err) {
+        return done(err, null);
+      }
+    }
+  )
+);
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
+/* ================= AUTH ROUTES ================= */
+
+app.get(
+  "/auth/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+);
+
+app.get(
+  "/auth/google/callback",
+  passport.authenticate("google", {
+    failureRedirect: "/",
+  }),
+  (req, res) => {
+    res.redirect("/");
   }
+);
+
+app.get("/api/user", (req, res) => {
+  res.json(req.user || null);
 });
 
-/* ================= SERVE FRONTEND ================= */
+app.get("/api/logout", (req, res) => {
+  req.logout(() => {
+    res.redirect("/");
+  });
+});
+
+/* ================= STATIC FRONTEND ================= */
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,7 +110,7 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend/build/index.html"));
 });
 
-/* ================= START SERVER ================= */
+/* ================= START ================= */
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
