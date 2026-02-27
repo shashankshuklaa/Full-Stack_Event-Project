@@ -5,6 +5,15 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import pkg from "pg";
 import path from "path";
+
+const frontendPath = path.join(process.cwd(), "frontend", "build");
+
+app.use(express.static(frontendPath));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(frontendPath, "index.html"));
+});
+
 import { fileURLToPath } from "url";
 
 const { Pool } = pkg;
@@ -161,4 +170,5 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
 
