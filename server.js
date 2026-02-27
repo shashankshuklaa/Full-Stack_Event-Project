@@ -35,6 +35,21 @@ const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+// Automatically create users table
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name TEXT,
+        email TEXT UNIQUE
+      );
+    `);
+    console.log("Users table ready");
+  } catch (err) {
+    console.error("Error creating users table:", err);
+  }
+})();
 
 /* ================= PASSPORT ================= */
 
@@ -115,3 +130,4 @@ app.get("*", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
