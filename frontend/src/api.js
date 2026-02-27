@@ -1,7 +1,16 @@
-import axios from "axios";
+const API_BASE = "";
 
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL
-});
+export const getUser = async () => {
+  const res = await fetch(`${API_BASE}/api/user`, {
+    credentials: "include",
+  });
+  return res.json();
+};
 
-export default api;
+export const loginWithGoogle = () => {
+  window.location.href = "/auth/google";
+};
+
+export const logout = () => {
+  window.location.href = "/logout";
+};
