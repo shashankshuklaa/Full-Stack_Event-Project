@@ -2,120 +2,79 @@ import express from "express";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 10000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-app.use(express.json());
-
-/* =========================
-   DATABASE CONNECTION
-========================= */
-
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-});
-
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    google_id TEXT UNIQUE,
-    display_name TEXT,
-    email TEXT
-  );
-`);
-
-console.log("Users table ready");
-
-/* =========================
-   SESSION CONFIG
-========================= */
-
+// ====================
+// Session
+// ====================
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "supersecret",
+    secret: process.env.SESSION_SECRET || "secret",
     resave: false,
     saveUninitialized: false,
-    cookie: {
-      secure: true,
-      sameSite: "none",
-    },
   })
 );
 
 app.use(passport.initialize());
 app.use(passport.session());
 
-/* =========================
-   PASSPORT CONFIG
-========================= */
-
+// ====================
+// Passport
+// ====================
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL:
-        "https://event-app-ilov.onrender.com/auth/google/callback",
+      callbackURL: "/auth/google/callback",
     },
-    async (accessToken, refreshToken, profile, done) => {
-      const { id, displayName, emails } = profile;
-
-      try {
-        const result = await pool.query(
-          `INSERT INTO users (google_id, display_name, email)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (google_id)
-           DO UPDATE SET display_name = EXCLUDED.display_name
-           RETURNING *`,
-          [id, displayName, emails[0].value]
-        );
-
-        return done(null, result.rows[0]);
-      } catch (err) {
-        return done(err, null);
-      }
+    function (accessToken, refreshToken, profile, done) {
+      return done(null, profile);
     }
   )
 );
 
 passport.serializeUser((user, done) => {
-  done(null, user.id);
+  done(null, user);
 });
 
-passport.deserializeUser(async (id, done) => {
-  const result = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
-  done(null, result.rows[0]);
+passport.deserializeUser((user, done) => {
+  done(null, user);
 });
 
-/* =========================
-   AUTH ROUTES
-========================= */
+// ====================
+// Routes
+// ====================
 
-app.get(
-  "/auth/google",
+app.get("/auth/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-app.get(
-  "/auth/google/callback",
+app.get("/auth/google/callback",
   passport.authenticate("google", {
     failureRedirect: "/",
   }),
-  (req, res) => {
+  function (req, res) {
     res.redirect("/");
   }
 );
 
 app.get("/api/user", (req, res) => {
-  res.json(req.user || null);
+  if (req.isAuthenticated()) {
+    res.json(req.user);
+  } else {
+    res.json(null);
+  }
 });
 
 app.get("/logout", (req, res) => {
@@ -124,10 +83,9 @@ app.get("/logout", (req, res) => {
   });
 });
 
-/* =========================
-   SERVE REACT FRONTEND
-========================= */
-
+// ====================
+// Serve React Build
+// ====================
 const frontendPath = path.join(__dirname, "frontend", "build");
 
 app.use(express.static(frontendPath));
@@ -136,12 +94,7 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(frontendPath, "index.html"));
 });
 
-/* =========================
-   START SERVER
-========================= */
-
-const PORT = process.env.PORT || 10000;
-
+// ====================
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
