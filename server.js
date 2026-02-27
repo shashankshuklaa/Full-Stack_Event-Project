@@ -4,9 +4,7 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
 
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -98,3 +96,4 @@ app.get("*", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
